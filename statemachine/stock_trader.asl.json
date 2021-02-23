@@ -1,10 +1,11 @@
 {
-    "Comment": "A state machine that does mock stock trading.",
-    "StartAt": "Check Stock Value",
+    "Comment": "A state machine that scan a website for images URIs then run performance testing against those objects on different websites.",
+    "StartAt": "Crawle For Images",
     "States": {
-        "Check Stock Value": {
+        "Crawle For Images": {
             "Type": "Task",
-            "Resource": "${StockCheckerFunctionArn}",
+            "Resource": "${ScrapperFunctionArn}",
+            "ResultPath": "$.ScrapperResults",
             "Retry": [
                 {
                     "ErrorEquals": [
@@ -15,83 +16,49 @@
                     "BackoffRate": 1.5
                 }
             ],
-            "Next": "Buy or Sell?"
+            "Next": "For Loop Condition"
         },
-        "Buy or Sell?": {
+        "For Loop Condition": {
             "Type": "Choice",
             "Choices": [
-                {
-                    "Variable": "$.stock_price",
-                    "NumericLessThanEquals": 50,
-                    "Next": "Buy Stock"
-                }
+              {
+                "Not": {
+                  "Variable": "$.ScrapperResults.ImageLinks[0]",
+                  "StringEquals": "DONE"
+                },
+                "Next": "Run Performance Testing"
+              }
             ],
-            "Default": "Sell Stock"
-        },
-        "Sell Stock": {
+            "Default": "Succeed"
+          },
+        "Run Performance Testing": {
             "Type": "Task",
-            "Resource": "${StockSellerFunctionArn}",
+            "Resource": "${PerfTestingRunnerFunctionArn}",
+            "Parameters": {"scrapperJobId": "$.ScrapperResults.Id",
+            "ScrapperJobTimestamp": "$.ScrapperResults.Timestamp",
+            "ImageUri": "$.ScrapperResults.ImageLinks[0]"},
+            "ResultPath": "null",
             "Retry": [
                 {
                     "ErrorEquals": [
                         "States.TaskFailed"
                     ],
-                    "IntervalSeconds": 2,
-                    "MaxAttempts": 3,
-                    "BackoffRate": 1
-                }
-            ],
-            "Next": "Record Transaction"
-        },
-        "Buy Stock": {
-            "Type": "Task",
-            "Resource": "${StockBuyerFunctionArn}",
-            "Retry": [
-                {
-                    "ErrorEquals": [
-                        "States.TaskFailed"
-                    ],
-                    "IntervalSeconds": 2,
-                    "MaxAttempts": 3,
-                    "BackoffRate": 1
-                }
-            ],
-            "Next": "Record Transaction"
-        },
-        "Record Transaction": {
-            "Type": "Task",
-            "Resource": "${DDBPutItem}",
-            "Parameters": {
-                "TableName": "${DDBTable}",
-                "Item": {
-                    "Id": {
-                        "S.$": "$.id"
-                    },
-                    "Type": {
-                        "S.$": "$.type"
-                    },
-                    "Price": {
-                        "N.$": "$.price"
-                    },
-                    "Quantity": {
-                        "N.$": "$.qty"
-                    },
-                    "Timestamp": {
-                        "S.$": "$.timestamp"
-                    }
-                }
-            },
-            "Retry": [
-                {
-                    "ErrorEquals": [
-                        "States.TaskFailed"
-                    ],
-                    "IntervalSeconds": 20,
+                    "IntervalSeconds": 15,
                     "MaxAttempts": 5,
-                    "BackoffRate": 10
+                    "BackoffRate": 1.5
                 }
             ],
-            "End": true
+            "Next": "Pop Element from List"
+        },
+        "Pop Element from List": {
+        "Type": "Pass",
+        "Parameters": {
+            "ScrapperResults.ImageLinks.$": "$.ScrapperResults.ImageLinks[1:]"
+        },
+        "Next": "For Loop Condition"
+        },
+        "Succeed": {
+        "Type": "Succeed"
         }
     }
 }
