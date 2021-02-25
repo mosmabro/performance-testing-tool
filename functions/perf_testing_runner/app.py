@@ -1,27 +1,61 @@
-from random import randint
+import os
+import requests
+import boto3
 
+session = boto3.Session()
+firehoseClient = session.client('firehose')
 
 def lambda_handler(event, context):
-    """Sample Lambda function which mocks the operation of checking the current price 
-    of a stock.
+    uri = event['uri']
+    website1 = os.environ['WEBSITE1']
+    website2 = os.environ['WEBSITE2']
+    deliveryStream = os.environ['DeliveryStreamName']
 
-    For demonstration purposes this Lambda function simply returns 
-    a random integer between 0 and 100 as the stock price.
+    #website1 = 'https://www.colypointobserver.com.au/'
+    #website2 = 'http://nvi.com.au/'
+    #Getting the first URL
+    url = website1 + uri
+    response = requests.get(url, timeout=6)
 
-    Parameters
-    ----------
-    event: dict, required
-        Input event to the Lambda function
+    timeElabsed1 = round(response.elapsed.total_seconds(),5)
+    payload = {
+            "domain":website1,
+            "uri":uri,
+            "elapsed": str(timeElabsed1),
+        }
 
-    context: object, required
-        Lambda Context runtime methods and attributes
+    full_payload1 = {**payload, **response.headers}
+    
+    print(full_payload1)
 
-    Returns
-    ------
-        dict: Object containing the current price of the stock
-    """
-    # Check current price of the stock
-    stock_price = randint(
-        0, 100
-    )  # Current stock price is mocked as a random integer between 0 and 100
-    return {"stock_price": stock_price}
+    url = website2 + uri
+    response = requests.get(url, timeout=6)
+    print(str(round(response.elapsed.total_seconds(),5)))
+
+    timeElabsed2 = round(response.elapsed.total_seconds(),5)
+    payload = {
+            "domain":website2,
+            "uri":uri,
+            "elapsed": str(timeElabsed2),
+        }
+
+    full_payload2 = {**payload, **response.headers}
+
+    print(full_payload2)
+
+    print('Time elabsed from site1:'+str(timeElabsed1)+', time elabsed from site2:'+str(timeElabsed2))
+
+    response = client.put_record_batch(
+            DeliveryStreamName=deliveryStream,
+            Records=[
+                {
+                    'Data': json.dumps(payload1).encode('utf-8')
+                },
+                {
+                    'Data': json.dumps(payload2).encode('utf-8')
+                }
+            ]
+        )
+    return 'success'
+
+

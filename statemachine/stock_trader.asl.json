@@ -16,49 +16,36 @@
                     "BackoffRate": 1.5
                 }
             ],
-            "Next": "For Loop Condition"
+            "Next": "Test All Links"
         },
-        "For Loop Condition": {
-            "Type": "Choice",
-            "Choices": [
-              {
-                "Not": {
-                  "Variable": "$.ScrapperResults.ImageLinks[0]",
-                  "StringEquals": "DONE"
-                },
-                "Next": "Run Performance Testing"
-              }
-            ],
-            "Default": "Succeed"
-          },
-        "Run Performance Testing": {
-            "Type": "Task",
-            "Resource": "${PerfTestingRunnerFunctionArn}",
-            "Parameters": {"scrapperJobId": "$.ScrapperResults.Id",
-            "ScrapperJobTimestamp": "$.ScrapperResults.Timestamp",
-            "ImageUri": "$.ScrapperResults.ImageLinks[0]"},
-            "ResultPath": "null",
-            "Retry": [
-                {
-                    "ErrorEquals": [
-                        "States.TaskFailed"
+        "Test All Links": {
+            "Type": "Map",
+            "ItemsPath": "$.ScrapperResults.ImageLinks",
+            "MaxConcurrency": 0,
+            "Iterator": {
+              "StartAt": "Run Performance Testing",
+              "States": {
+                "Run Performance Testing": {
+                    "Type": "Task",
+                    "Resource": "${PerfTestingRunnerFunctionArn}",
+                    "Parameters": {"scrapperJobId": "$.ScrapperResults.Id",
+                    "ScrapperJobTimestamp": "$.ScrapperResults.Timestamp",
+                    "ImageUri": "$.ScrapperResults.ImageLinks[0]"},
+                    "Retry": [
+                        {
+                            "ErrorEquals": [
+                                "States.TaskFailed"
+                            ],
+                            "IntervalSeconds": 15,
+                            "MaxAttempts": 5,
+                            "BackoffRate": 1.5
+                        }
                     ],
-                    "IntervalSeconds": 15,
-                    "MaxAttempts": 5,
-                    "BackoffRate": 1.5
+                    "End": true
                 }
-            ],
-            "Next": "Pop Element from List"
-        },
-        "Pop Element from List": {
-        "Type": "Pass",
-        "Parameters": {
-            "ScrapperResults.ImageLinks.$": "$.ScrapperResults.ImageLinks[1:]"
-        },
-        "Next": "For Loop Condition"
-        },
-        "Succeed": {
-        "Type": "Succeed"
+              }
+            },
+            "End": true
         }
     }
 }

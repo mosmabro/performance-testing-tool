@@ -4,9 +4,15 @@ Description: >
   performance-testing-tool
 
   Sample SAM Template for performance-testing-tool
-
+Parameters:
+  website1:
+    Type: String
+    # Default: '{{resolve:ssm:website1:1}}'
+  website2: 
+    Type: String
+    # Default: '{{resolve:ssm:website2:1}}'
 Resources:
-  PerformanceTestingStateMachine:
+  PerfTestingStateMachine:
     Type: AWS::Serverless::StateMachine # More info about State Machine Resource: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-statemachine.html
     Properties:
       DefinitionUri: statemachine/stock_trader.asl.json
@@ -14,7 +20,7 @@ Resources:
         ScrapperFunctionArn: !GetAtt ScrapperFunction.Arn
         PerfTestingRunnerFunctionArn: !GetAtt PerfTestingRunnerFunction.Arn
       Events:
-        PerformanceTestingSchedule:
+        Scheduler:
           Type: Schedule # More info about Schedule Event Source: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-statemachine-schedule.html
           Properties:
             Description: Schedule to run the performance testing state machine every 15 sec
@@ -32,6 +38,10 @@ Resources:
       CodeUri: functions/scrapper/
       Handler: app.lambda_handler
       Runtime: python3.8
+      Environment:
+        Variables:
+          WEBSITE1: !Ref website1
+          WEBSITE2: !Ref website2
 
   PerfTestingRunnerFunction:
     Type: AWS::Serverless::Function
@@ -39,15 +49,83 @@ Resources:
       CodeUri: functions/perf_testing_runner/
       Handler: app.lambda_handler
       Runtime: python3.8
+      Environment:
+        Variables:
+          WEBSITE1: !Ref website1
+          WEBSITE2: !Ref website2
+  
+  ResultsBucket:
+    Type: 'AWS::S3::Bucket'
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-testing-results'
 
+  deliverystream:
+    DependsOn:
+      - deliveryPolicy
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !Join 
+          - ''
+          - - 'arn:aws:s3:::'
+            - !Ref ResultsBucket
+        BufferingHints:
+          IntervalInSeconds: '60'
+          SizeInMBs: '50'
+        CompressionFormat: UNCOMPRESSED
+        Prefix: firehose/
+        RoleARN: !GetAtt deliveryRole.Arn
+        ProcessingConfiguration:
+          Enabled: 'false'
+
+  deliveryRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: 'sts:AssumeRole'
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Ref 'AWS::AccountId'
+  deliveryPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: firehose_delivery_policy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 's3:AbortMultipartUpload'
+              - 's3:GetBucketLocation'
+              - 's3:GetObject'
+              - 's3:ListBucket'
+              - 's3:ListBucketMultipartUploads'
+              - 's3:PutObject'
+            Resource:
+              - !Join 
+                - ''
+                - - 'arn:aws:s3:::'
+                  - !Ref ResultsBucket
+              - !Join 
+                - ''
+                - - 'arn:aws:s3:::'
+                  - !Ref ResultsBucket
+                  - '*'
+      Roles:
+        - !Ref deliveryRole
+          
 
 Outputs:
   # StockTradingStateMachineHourlyTradingSchedule is an implicit Schedule event rule created out of Events key under Serverless::StateMachine
   # Find out more about other implicit resources you can reference within SAM
   # https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-specification-generated-resources.html
-  PerformanceTestingStateMachineArn:
+  PerfTestingStateMachineArn:
     Description: "Performance Testing State machine ARN"
-    Value: !Ref PerformanceTestingStateMachine
-  PerformanceTestingStateMachineRoleArn:
-    Description: "IAM Role created for Stock Trading State machine based on the specified SAM Policy Templates"
-    Value: !GetAtt PerformanceTestingStateMachineRole.Arn
+    Value: !Ref PerfTestingStateMachine
